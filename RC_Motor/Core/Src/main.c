@@ -56,7 +56,7 @@ UART_HandleTypeDef huart3;
 osThreadId defaultTaskHandle;
 osThreadId Uart_TestHandle;
 /* USER CODE BEGIN PV */
-
+uint8_t num1, num2;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -74,7 +74,21 @@ void StartTask02(void const * argument);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+uint8_t parseNumber(const uint8_t *str, uint8_t *num1, uint8_t *num2) {
+    *num1 = 0;
+    *num2 = 0;
+    uint8_t *currentNum = num1;
 
+    while (*str != '\r') {
+        if (*str >= '0' && *str <= '9') {
+            *currentNum = (*currentNum * 10) + (*str - '0');
+        } else if (*str == ':') {
+            currentNum = num2;
+        }
+        str++;
+    }
+    return 0;
+}
 /* USER CODE END 0 */
 
 /**
@@ -348,13 +362,24 @@ static void MX_GPIO_Init(void)
 void StartDefaultTask(void const * argument)
 {
   /* USER CODE BEGIN 5 */
-	  uint8_t car_forward[4]={-16,0,16,0};
+	uint8_t car_forward[4]={0,0,0,0};
 
   /* Infinite loop */
   for(;;)
   {
-	  HAL_I2C_Mem_Write(&hi2c1, I2C_ADDR, MOTOR_FIXED_SPEED_ADDR, 1, car_forward, 4, 1000);
-    osDelay(1);
+	uint8_t Motor_x=num1;
+	if(Motor_x<=32){
+		if(Motor_x>17){
+			car_forward[0]=-((Motor_x-16/2)); 
+			car_forward[2]=((Motor_x-16)/2);
+		}
+		else{
+			car_forward[0]=((17-Motor_x)/2);
+			car_forward[2]=-((17-Motor_x)/2);
+		}
+	}
+	HAL_I2C_Mem_Write(&hi2c1, I2C_ADDR, MOTOR_FIXED_SPEED_ADDR, 1, car_forward, 4, 1000);
+    osDelay(100);
   }
   /* USER CODE END 5 */
 }
@@ -369,10 +394,20 @@ void StartDefaultTask(void const * argument)
 void StartTask02(void const * argument)
 {
   /* USER CODE BEGIN StartTask02 */
+  uint8_t buffer[10];
+  uint8_t buffer2[15];
+
   /* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+	HAL_UART_Receive(&huart1, buffer, 7,100);
+	parseNumber(buffer, &num1, &num2);
+	sprintf((char*)buffer2, "%u:%u\r\n", num1, num2);
+	HAL_UART_Transmit(&huart3, buffer2, strlen((char*)buffer2), 100);
+
+	//HAL_UART_Transmit(&huart3, "\r\n", strlen("\r\n"), 100);
+
+    osDelay(500);
   }
   /* USER CODE END StartTask02 */
 }

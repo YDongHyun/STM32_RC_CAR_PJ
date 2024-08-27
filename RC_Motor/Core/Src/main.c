@@ -50,13 +50,17 @@
 /* Private variables ---------------------------------------------------------*/
 I2C_HandleTypeDef hi2c1;
 
+TIM_HandleTypeDef htim2;
+
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart3;
 
 osThreadId defaultTaskHandle;
 osThreadId Uart_TestHandle;
+osThreadId ServoHandle;
 /* USER CODE BEGIN PV */
 uint8_t num1, num2;
+uint16_t Servo_angle;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -65,8 +69,10 @@ static void MX_GPIO_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_USART3_UART_Init(void);
+static void MX_TIM2_Init(void);
 void StartDefaultTask(void const * argument);
 void StartTask02(void const * argument);
+void StartTask03(void const * argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -124,6 +130,7 @@ int main(void)
   MX_USART1_UART_Init();
   MX_I2C1_Init();
   MX_USART3_UART_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
   uint8_t error[256];
   if(HAL_I2C_Mem_Write(&hi2c1, I2C_ADDR, MOTOR_TYPE_ADDR, 1, &MotorType, 1, 1000)==HAL_OK){
@@ -143,6 +150,8 @@ else{
 	sprintf((char *)error, "NO\n");
 	HAL_UART_Transmit(&huart1, error, strlen((char *)error), 100);
 }
+HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
+
   /* USER CODE END 2 */
 
   /* USER CODE BEGIN RTOS_MUTEX */
@@ -169,6 +178,10 @@ else{
   /* definition and creation of Uart_Test */
   osThreadDef(Uart_Test, StartTask02, osPriorityLow, 0, 128);
   Uart_TestHandle = osThreadCreate(osThread(Uart_Test), NULL);
+
+  /* definition and creation of Servo */
+  osThreadDef(Servo, StartTask03, osPriorityIdle, 0, 128);
+  ServoHandle = osThreadCreate(osThread(Servo), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -264,6 +277,65 @@ static void MX_I2C1_Init(void)
 }
 
 /**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 143;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 9999;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
+  HAL_TIM_MspPostInit(&htim2);
+
+}
+
+/**
   * @brief USART1 Initialization Function
   * @param None
   * @retval None
@@ -341,8 +413,8 @@ static void MX_GPIO_Init(void)
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOD_CLK_ENABLE();
-  __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
@@ -370,7 +442,7 @@ void StartDefaultTask(void const * argument)
 	uint8_t Motor_x=num1;
 	if(Motor_x<=32){
 		if(Motor_x>17){
-			car_forward[0]=-((Motor_x-16/2)); 
+			car_forward[0]=-((Motor_x-16)/2);
 			car_forward[2]=((Motor_x-16)/2);
 		}
 		else{
@@ -407,9 +479,49 @@ void StartTask02(void const * argument)
 
 	//HAL_UART_Transmit(&huart3, "\r\n", strlen("\r\n"), 100);
 
-    osDelay(500);
+    osDelay(400);
   }
   /* USER CODE END StartTask02 */
+}
+
+/* USER CODE BEGIN Header_StartTask03 */
+/**
+* @brief Function implementing the Servo thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartTask03 */
+void StartTask03(void const * argument)
+{
+  /* USER CODE BEGIN StartTask03 */
+	uint16_t i = 750;
+
+  /* Infinite loop */
+  for(;;)
+  {
+	  Servo_angle=(uint16_t)num2;
+	  uint16_t servo_angle=((Servo_angle - 1) * (980 - 500)) / (32 - 1) + 500;
+
+	  if(i>=servo_angle){
+		  for( ; i >servo_angle; i -= 10){
+			__HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_2, i);
+
+			osDelay(3); // 500 msec
+		}
+	  }
+	  else{
+		  for( ; i <servo_angle; i += 10)
+		  		{
+		  			__HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_2, i);
+
+		  			osDelay(3); // 500 msec
+		  		}
+	  }
+	  osDelay(100);
+
+  }
+
+  /* USER CODE END StartTask03 */
 }
 
 /**
